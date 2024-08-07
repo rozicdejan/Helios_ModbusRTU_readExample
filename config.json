@@ -1,0 +1,7 @@
+{
+    "modbus_port": "COM3",
+    "modbus_baud": 9600,
+    "modbus_slave_address": 1,
+    "modbus_parity": "N",
+    "modbus_stop_bit": 1
+}
