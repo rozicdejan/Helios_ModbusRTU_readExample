@@ -110,7 +110,7 @@ func main() {
 	serialConfig := &serial.Config{
 		Name:        config.ModbusPort,
 		Baud:        config.ModbusBaud,
-		ReadTimeout: serial.DefaultReadTimeout,
+		ReadTimeout: 3000, // serial.DefaultReadTimeout
 	}
 
 	// Set parity and stop bit
