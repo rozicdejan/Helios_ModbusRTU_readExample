@@ -4,5 +4,6 @@
     "modbus_slave_address": 1,
     "modbus_parity": "N",
     "modbus_stop_bit": 1,
-    "read_interval_seconds": 5
+    "read_interval_seconds": 5,
+    "read_timeout_ms": 1000  
 }

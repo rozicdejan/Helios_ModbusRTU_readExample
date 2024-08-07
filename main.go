@@ -20,6 +20,7 @@ type Config struct {
 	ModbusParity        string `json:"modbus_parity"`
 	ModbusStopBit       int    `json:"modbus_stop_bit"`
 	ReadIntervalSeconds int    `json:"read_interval_seconds"`
+	ReadTimeoutMs       int    `json:"read_timeout_ms"` // Add a read timeout field
 }
 
 // Function to calculate CRC-16 for Modbus RTU
@@ -112,7 +113,7 @@ func main() {
 	serialConfig := &serial.Config{
 		Name:        config.ModbusPort,
 		Baud:        config.ModbusBaud,
-		ReadTimeout: serial.DefaultReadTimeout,
+		ReadTimeout: time.Millisecond * time.Duration(config.ReadTimeoutMs),
 	}
 
 	// Set parity and stop bit
