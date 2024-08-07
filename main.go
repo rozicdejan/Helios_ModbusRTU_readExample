@@ -7,17 +7,19 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 
 	"github.com/tarm/serial"
 )
 
 // Config holds the Modbus configuration
 type Config struct {
-	ModbusPort         string `json:"modbus_port"`
-	ModbusBaud         int    `json:"modbus_baud"`
-	ModbusSlaveAddress byte   `json:"modbus_slave_address"`
-	ModbusParity       string `json:"modbus_parity"`
-	ModbusStopBit      int    `json:"modbus_stop_bit"`
+	ModbusPort          string `json:"modbus_port"`
+	ModbusBaud          int    `json:"modbus_baud"`
+	ModbusSlaveAddress  byte   `json:"modbus_slave_address"`
+	ModbusParity        string `json:"modbus_parity"`
+	ModbusStopBit       int    `json:"modbus_stop_bit"`
+	ReadIntervalSeconds int    `json:"read_interval_seconds"`
 }
 
 // Function to calculate CRC-16 for Modbus RTU
@@ -104,14 +106,13 @@ func main() {
 	}
 
 	var config Config
-	//unmarsh json file
 	json.Unmarshal(byteValue, &config)
 
 	// Open serial port
 	serialConfig := &serial.Config{
 		Name:        config.ModbusPort,
 		Baud:        config.ModbusBaud,
-		ReadTimeout: 3000, // serial.DefaultReadTimeout
+		ReadTimeout: serial.DefaultReadTimeout,
 	}
 
 	// Set parity and stop bit
@@ -141,49 +142,66 @@ func main() {
 	}
 	defer port.Close()
 
-	// Read FAN_SPEED from address 4353
-	fanSpeedResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4353, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+	ticker := time.NewTicker(time.Duration(config.ReadIntervalSeconds) * time.Second)
+	defer ticker.Stop()
 
-	fanSpeed, err := parseModbusResponse(fanSpeedResponse, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Run the periodic read in a separate Goroutine
+	go func() {
+		for range ticker.C {
+			// Read FAN_SPEED from address 4353
+			fanSpeedResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4353, 1)
+			if err != nil {
+				log.Printf("Error reading FAN_SPEED: %v", err)
+				continue
+			}
 
-	fmt.Printf("FAN_SPEED: %d\n", fanSpeed[0])
+			fanSpeed, err := parseModbusResponse(fanSpeedResponse, 1)
+			if err != nil {
+				log.Printf("Error parsing FAN_SPEED response: %v", err)
+				continue
+			}
 
-	// Read Multisensor_temp from address 4363 (12-bit value)
-	tempResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4363, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+			fmt.Printf("FAN_SPEED: %d\n", fanSpeed[0])
 
-	tempData, err := parseModbusResponse(tempResponse, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+			// Read Multisensor_temp from address 4363 (12-bit value)
+			tempResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4363, 1)
+			if err != nil {
+				log.Printf("Error reading Multisensor_temp: %v", err)
+				continue
+			}
 
-	tempValue := tempData[0] & 0x0FFF // Mask to 12 bits
-	fmt.Printf("Multisensor_temp: %d\n", tempValue)
+			tempData, err := parseModbusResponse(tempResponse, 1)
+			if err != nil {
+				log.Printf("Error parsing Multisensor_temp response: %v", err)
+				continue
+			}
 
-	// Read state from address 4609 (0 or 1)
-	stateResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4609, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+			tempValue := tempData[0] & 0x0FFF // Mask to 12 bits
+			fmt.Printf("Multisensor_temp: %d\n", tempValue)
 
-	stateData, err := parseModbusResponse(stateResponse, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
+			// Read state from address 4609 (0 or 1)
+			stateResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4609, 1)
+			if err != nil {
+				log.Printf("Error reading state: %v", err)
+				continue
+			}
 
-	stateValue := stateData[0] & 0x01 // Mask to 1 bit
-	state := "home"
-	if stateValue == 1 {
-		state = "away"
-	}
+			stateData, err := parseModbusResponse(stateResponse, 1)
+			if err != nil {
+				log.Printf("Error parsing state response: %v", err)
+				continue
+			}
 
-	fmt.Printf("State: %s\n", state)
+			stateValue := stateData[0] & 0x01 // Mask to 1 bit
+			state := "home"
+			if stateValue == 1 {
+				state = "away"
+			}
+
+			fmt.Printf("State: %s\n", state)
+		}
+	}()
+
+	// Keep the main function running
+	select {}
 }
