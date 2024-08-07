@@ -2,11 +2,23 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/tarm/serial"
 )
+
+// Config holds the Modbus configuration
+type Config struct {
+	ModbusPort         string `json:"modbus_port"`
+	ModbusBaud         int    `json:"modbus_baud"`
+	ModbusSlaveAddress byte   `json:"modbus_slave_address"`
+	ModbusParity       string `json:"modbus_parity"`
+	ModbusStopBit      int    `json:"modbus_stop_bit"`
+}
 
 // Function to calculate CRC-16 for Modbus RTU
 func crc16(data []byte) uint16 {
@@ -79,16 +91,57 @@ func parseModbusResponse(response []byte, numRegisters int) ([]uint16, error) {
 }
 
 func main() {
+	// Read and parse the configuration file
+	configFile, err := os.Open("config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer configFile.Close()
+
+	byteValue, err := ioutil.ReadAll(configFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var config Config
+	json.Unmarshal(byteValue, &config)
+
 	// Open serial port
-	config := &serial.Config{Name: "/dev/ttyUSB0", Baud: 9600}
-	port, err := serial.OpenPort(config)
+	serialConfig := &serial.Config{
+		Name:        config.ModbusPort,
+		Baud:        config.ModbusBaud,
+		ReadTimeout: serial.DefaultReadTimeout,
+	}
+
+	// Set parity and stop bit
+	switch config.ModbusParity {
+	case "E":
+		serialConfig.Parity = serial.ParityEven
+	case "O":
+		serialConfig.Parity = serial.ParityOdd
+	case "N":
+		serialConfig.Parity = serial.ParityNone
+	default:
+		log.Fatalf("Invalid parity: %s", config.ModbusParity)
+	}
+
+	switch config.ModbusStopBit {
+	case 1:
+		serialConfig.StopBits = serial.Stop1
+	case 2:
+		serialConfig.StopBits = serial.Stop2
+	default:
+		log.Fatalf("Invalid stop bit: %d", config.ModbusStopBit)
+	}
+
+	port, err := serial.OpenPort(serialConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer port.Close()
 
 	// Read FAN_SPEED from address 4353
-	fanSpeedResponse, err := sendModbusRequest(port, 1, 0x03, 4353, 1)
+	fanSpeedResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4353, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,7 +154,7 @@ func main() {
 	fmt.Printf("FAN_SPEED: %d\n", fanSpeed[0])
 
 	// Read Multisensor_temp from address 4363 (12-bit value)
-	tempResponse, err := sendModbusRequest(port, 1, 0x03, 4363, 1)
+	tempResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4363, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -115,7 +168,7 @@ func main() {
 	fmt.Printf("Multisensor_temp: %d\n", tempValue)
 
 	// Read state from address 4609 (0 or 1)
-	stateResponse, err := sendModbusRequest(port, 1, 0x03, 4609, 1)
+	stateResponse, err := sendModbusRequest(port, config.ModbusSlaveAddress, 0x03, 4609, 1)
 	if err != nil {
 		log.Fatal(err)
 	}
