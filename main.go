@@ -104,6 +104,7 @@ func main() {
 	}
 
 	var config Config
+	//unmarsh json file
 	json.Unmarshal(byteValue, &config)
 
 	// Open serial port
